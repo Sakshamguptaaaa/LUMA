@@ -119,9 +119,9 @@ async fn run_inner(c: &Arc<Companion>, app: &AppHandle, epoch: u64, mut display:
             changed,
             level_instruction: level,
         });
-        let gemini = c.gemini_for(&prefs, "MEDIA_RESOLUTION_HIGH");
-        let body = gemini.build_body(LESSON_PROMPT, &[], &ctx, &[ImagePart { jpeg: &snap.images[0].jpeg }], "What is the next move?");
-        let reply = gemini.complete(&body).await?;
+        let model = c.llm_for(&prefs, "MEDIA_RESOLUTION_HIGH");
+        let body = model.build_body(LESSON_PROMPT, &[], &ctx, &[ImagePart { jpeg: &snap.images[0].jpeg }], "What is the next move?");
+        let reply = model.complete(&body).await?;
         if !c.current(epoch) {
             return Ok(());
         }

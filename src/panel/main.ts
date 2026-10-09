@@ -1,11 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-type Provider = "gemini" | "assemblyai" | "sarvam" | "proxy";
+type Provider = "gemini" | "groq" | "assemblyai" | "sarvam" | "proxy";
 
 interface Prefs {
   hotkey: string;
+  llm_provider: string;
   gemini_model: string;
+  groq_model: string;
+  ollama_model: string;
+  ollama_url: string;
   thinking_level: string;
   stt_model: string;
   tts_speaker: string;
@@ -35,12 +39,20 @@ interface SettingsView {
   platform: string;
 }
 
-const PROVIDERS: { id: Provider; name: string; help: string; required: boolean }[] = [
-  { id: "gemini", name: "Gemini", help: "aistudio.google.com → Get API key", required: true },
-  { id: "assemblyai", name: "AssemblyAI", help: "Speech-to-text. assemblyai.com/dashboard", required: true },
-  { id: "sarvam", name: "Sarvam", help: "Voice. dashboard.sarvam.ai (optional: captions only without it)", required: false },
-  { id: "proxy", name: "LUMA proxy token", help: "Only if your team runs a LUMA key proxy (set its URL below)", required: false },
+const PROVIDERS: { id: Provider; name: string; help: string; required: (p: Prefs) => boolean }[] = [
+  { id: "gemini", name: "Gemini", help: "aistudio.google.com → Get API key", required: (p) => llmOf(p) === "gemini" },
+  { id: "groq", name: "Groq", help: "console.groq.com/keys (only if Groq answers)", required: (p) => llmOf(p) === "groq" },
+  { id: "assemblyai", name: "AssemblyAI", help: "Speech-to-text. assemblyai.com/dashboard", required: () => true },
+  { id: "sarvam", name: "Sarvam", help: "Voice. dashboard.sarvam.ai (optional: captions only without it)", required: () => false },
+  { id: "proxy", name: "LUMA proxy token", help: "Only if your team runs a LUMA key proxy (set its URL below)", required: () => false },
 ];
+const llmOf = (p: Prefs) => (p.llm_provider === "groq" || p.llm_provider === "ollama" ? p.llm_provider : "gemini");
+
+// Show only the settings for the chosen answering model.
+function syncProvider() {
+  const llm = $<HTMLSelectElement>("llm_provider").value;
+  document.querySelectorAll<HTMLElement>("[data-llm]").forEach((el) => (el.hidden = el.dataset.llm !== llm));
+}
 
 const SPEAKERS =
   "shubh aditya ritu priya neha rahul pooja rohan simran kavya amit dev ishita shreya ratan varun manan sumit roopa kabir aayan ashutosh advait anand tanya tarun sunny mani gokul vijay shruti suhani mohit kavitha rehan soham rupali".split(
@@ -95,7 +107,7 @@ function prettyHotkey(h: string, platform: string) {
 function render() {
   const p = view.prefs;
   // On a Mac, speech can fall back to on-device recognition.
-  const missing = PROVIDERS.filter((x) => x.required && !view.keys[x.id] && !(x.id === "assemblyai" && view.platform === "macos"));
+  const missing = PROVIDERS.filter((x) => x.required(p) && !view.keys[x.id] && !(x.id === "assemblyai" && view.platform === "macos"));
   $("hint").innerHTML = missing.length
     ? `To start, add your ${missing.map((m) => m.name).join(" and ")} key in <b>Settings</b>.`
     : `Hold ${prettyHotkey(p.hotkey, view.platform)} and ask, then release. Say “show me” and LUMA draws on your screen.${p.gesture ? ` Or hold the trackpad still on something for ${(p.long_press_ms / 1000).toFixed(1)} s and ask about it.` : ""}${p.can_act ? " Ask it to <i>do</i> something (“change my GitHub username”) and it will, asking before anything important." : ""} Say “teach me how to…” and it guides you one step at a time while you do it. Press again to stop.`;
@@ -108,7 +120,7 @@ function render() {
     const src = view.keys[prov.id];
     const ok = src !== null;
     const status =
-      src === "env" ? "✓ from .env" : src === "keychain" ? "✓ saved" : src === "proxy" ? "✓ via proxy" : prov.required ? "required" : "optional";
+      src === "env" ? "✓ from .env" : src === "keychain" ? "✓ saved" : src === "proxy" ? "✓ via proxy" : prov.required(p) ? "required" : "optional";
     row.innerHTML = `<label>${prov.name} <span class="${ok ? "ok" : "missing"}">${status}</span>
         <input type="password" autocomplete="off" spellcheck="false" placeholder="${src === "env" ? "Set in .env (takes priority)" : ok ? "Paste to replace" : prov.help}" /></label>
         <button class="ghost">Save</button>`;
@@ -128,6 +140,11 @@ function render() {
   lang.innerHTML = LANGUAGES.map(([v, n]) => `<option value="${v}">${n}</option>`).join("");
   lang.value = p.tts_language;
   $<HTMLInputElement>("tts_pace").value = String(p.tts_pace);
+  $<HTMLSelectElement>("llm_provider").value = llmOf(p);
+  syncProvider();
+  $<HTMLInputElement>("groq_model").value = p.groq_model;
+  $<HTMLInputElement>("ollama_model").value = p.ollama_model;
+  $<HTMLInputElement>("ollama_url").value = p.ollama_url;
   $<HTMLInputElement>("gemini_model").value = p.gemini_model;
   $<HTMLSelectElement>("thinking_level").value = p.thinking_level;
   $<HTMLSelectElement>("mode").value = modeOf(p.gemini_model, p.thinking_level);
@@ -160,7 +177,11 @@ function collect(): Prefs {
     tts_speaker: $<HTMLSelectElement>("tts_speaker").value,
     tts_language: $<HTMLSelectElement>("tts_language").value,
     tts_pace: Number($<HTMLInputElement>("tts_pace").value),
+    llm_provider: $<HTMLSelectElement>("llm_provider").value,
     gemini_model: $<HTMLInputElement>("gemini_model").value.trim(),
+    groq_model: $<HTMLInputElement>("groq_model").value.trim(),
+    ollama_model: $<HTMLInputElement>("ollama_model").value.trim(),
+    ollama_url: $<HTMLInputElement>("ollama_url").value.trim(),
     thinking_level: $<HTMLSelectElement>("thinking_level").value,
     stt_model: $<HTMLInputElement>("stt_model").value.trim(),
     hotkey: $<HTMLInputElement>("hotkey").value.trim(),
@@ -219,6 +240,7 @@ const syncMode = () =>
     $<HTMLSelectElement>("thinking_level").value,
   ));
 $("gemini_model").addEventListener("input", syncMode);
+$("llm_provider").addEventListener("change", syncProvider);
 $("thinking_level").addEventListener("change", syncMode);
 
 $("save").addEventListener("click", () => save("saved"));

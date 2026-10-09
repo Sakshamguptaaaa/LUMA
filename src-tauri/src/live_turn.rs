@@ -278,6 +278,7 @@ async fn run(
 /// Whether this turn should use fast mode.
 pub fn use_live(c: &Companion, prefs: &Prefs) -> bool {
     prefs.voice_engine == "live"
+        && prefs.uses_gemini()
         && c.lesson().is_none()
         && !c.is_task_running()
         && c.live_failed_at.lock().unwrap().is_none_or(|t| t.elapsed() > FALLBACK_FOR)

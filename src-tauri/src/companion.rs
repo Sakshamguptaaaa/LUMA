@@ -28,6 +28,8 @@ use luma_core::session::Turn;
 use luma_core::speech::SpeechChunker;
 use luma_net::assemblyai::{self, SttEvent};
 use luma_net::gemini::{Gemini, HistoryTurn, ImagePart};
+use luma_net::llm::Llm;
+use luma_net::openai::OpenAiCompat;
 use luma_net::sarvam::SarvamTts;
 use luma_net::sarvam_ws::{self, TtsConfig, TtsEvent, TtsStream};
 use serde::Serialize;
@@ -362,10 +364,11 @@ impl Companion {
             return false;
         }
         // Without an AssemblyAI key, macOS falls back to on-device speech.
-        let required: &[Provider] = if cfg!(target_os = "macos") { &[Provider::Gemini] } else { &[Provider::Gemini, Provider::Assemblyai] };
-        let missing: Vec<&str> = required
-            .iter()
-            .copied()
+        let stt = (!cfg!(target_os = "macos")).then_some(Provider::Assemblyai);
+        let missing: Vec<&str> = prefs
+            .llm_key()
+            .into_iter()
+            .chain(stt)
             .filter(|p| get_key(*p).is_none())
             .map(|p| p.name())
             .collect();
@@ -822,25 +825,31 @@ impl Companion {
         self.status(app, Phase::Error, Some(assemblyai::redact(&format!("{e}"))));
     }
 
-    /// The accurate ("pointing") model, used by the agent.
-    pub fn gemini_for(&self, prefs: &Prefs, media_resolution: &'static str) -> Gemini {
-        Gemini {
-            client: self.http.clone(),
-            api_key: get_key(Provider::Gemini).unwrap_or_default(),
-            model: prefs.gemini_model.clone(),
-            thinking_level: prefs.thinking_level.clone(),
-            media_resolution,
+    /// The answering model for `prefs.llm_provider`. `gemini_model` and
+    /// `thinking` pick the Gemini model; Groq and Ollama use their one
+    /// configured model for every turn.
+    fn llm(&self, prefs: &Prefs, gemini_model: &str, thinking: &str, media_resolution: &'static str) -> Llm {
+        match prefs.llm_provider.as_str() {
+            "groq" => OpenAiCompat::groq(self.http.clone(), get_key(Provider::Groq).unwrap_or_default(), prefs.groq_model.clone()).into(),
+            "ollama" => OpenAiCompat::ollama(self.http.clone(), &prefs.ollama_url, prefs.ollama_model.clone()).into(),
+            _ => Gemini {
+                client: self.http.clone(),
+                api_key: get_key(Provider::Gemini).unwrap_or_default(),
+                model: gemini_model.to_string(),
+                thinking_level: thinking.to_string(),
+                media_resolution,
+            }
+            .into(),
         }
     }
 
-    fn gemini_for_style(&self, _prefs: &Prefs, style: &TurnStyle) -> Gemini {
-        Gemini {
-            client: self.http.clone(),
-            api_key: get_key(Provider::Gemini).unwrap_or_default(),
-            model: style.model.clone(),
-            thinking_level: style.thinking.clone(),
-            media_resolution: style.media,
-        }
+    /// The accurate ("pointing") model, used by the agent and lessons.
+    pub fn llm_for(&self, prefs: &Prefs, media_resolution: &'static str) -> Llm {
+        self.llm(prefs, &prefs.gemini_model, &prefs.thinking_level, media_resolution)
+    }
+
+    fn llm_for_style(&self, prefs: &Prefs, style: &TurnStyle) -> Llm {
+        self.llm(prefs, &style.model, &style.thinking, style.media)
     }
 
     fn tts(&self, prefs: &Prefs) -> Option<SarvamTts> {
@@ -886,13 +895,7 @@ impl Companion {
         }
         let this = self.clone();
         let app = app.clone();
-        let gemini = Gemini {
-            client: self.http.clone(),
-            api_key: get_key(Provider::Gemini).unwrap_or_default(),
-            model: prefs.fast_model.clone(),
-            thinking_level: "minimal".into(),
-            media_resolution: "MEDIA_RESOLUTION_HIGH",
-        };
+        let model = self.llm(prefs, &prefs.fast_model, "minimal", "MEDIA_RESOLUTION_HIGH");
         tokio::spawn(async move {
             let t = Instant::now();
             if snap {
@@ -926,8 +929,8 @@ impl Companion {
             .await;
             let Ok(Ok((crop, jpeg))) = prepared else { return };
             let what = luma_core::refine::describe_target(&id, label.as_deref());
-            let body = gemini.build_body(&luma_core::refine::refine_prompt(&what), &[], "", &[ImagePart { jpeg: &jpeg }], "Find it.");
-            let reply = match gemini.complete(&body).await {
+            let body = model.build_body(&luma_core::refine::refine_prompt(&what), &[], "", &[ImagePart { jpeg: &jpeg }], "Find it.");
+            let reply = match model.complete(&body).await {
                 Ok(r) => r,
                 Err(e) => return log::debug!("refine failed: {e}"),
             };
@@ -1020,11 +1023,11 @@ impl Companion {
                 session.turns().map(|t| HistoryTurn { user: &t.user, assistant: &t.assistant }).collect();
             let images: Vec<ImagePart> = snap.images.iter().map(|i| ImagePart { jpeg: &i.jpeg }).collect();
             let system = system_prompt(style.draw, prefs.can_act);
-            let body = self.gemini_for_style(&prefs, &style).build_body(&system, &history, &ctx, &images, &question);
-            // the fast model, in case the accurate one deliberates for long
-            let fallback = (style.model != prefs.fast_model).then(|| {
+            let body = self.llm_for_style(&prefs, &style).build_body(&system, &history, &ctx, &images, &question);
+            // the fast Gemini model, in case the accurate one deliberates for long
+            let fallback = (prefs.uses_gemini() && style.model != prefs.fast_model).then(|| {
                 let fast = TurnStyle { model: prefs.fast_model.clone(), thinking: prefs.fast_thinking.clone(), ..style.clone() };
-                let g = self.gemini_for_style(&prefs, &fast);
+                let g = self.llm_for_style(&prefs, &fast);
                 let b = g.build_body(&system, &history, &ctx, &images, &question);
                 (g, b)
             });
@@ -1032,9 +1035,9 @@ impl Companion {
         };
 
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-        let gemini = self.gemini_for_style(&prefs, &style);
+        let model = self.llm_for_style(&prefs, &style);
         let t_request = Instant::now();
-        let llm = gemini.hedged(body, fallback, std::time::Duration::from_millis(HEDGE_AFTER_MS), tx);
+        let llm = model.hedged(body, fallback, std::time::Duration::from_millis(HEDGE_AFTER_MS), tx);
         // A long silence feels broken: if nothing has arrived after a few
         // seconds (the model is planning a drawing), say so.
         let answer_started = Arc::new(AtomicBool::new(false));
