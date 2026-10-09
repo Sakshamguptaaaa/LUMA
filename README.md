@@ -12,8 +12,9 @@ what it is saying.
   the diagram (boxes, arrows, freehand lines) step by step as it explains
 - **Teaches:** "teach me how to add a table" points at one step at a time, watches you do it,
   and corrects you kindly; ask "why?" mid-way and it carries on afterwards
-- **Does things** you ask for, asking before anything consequential; "what did you change?"
-  and "undo that" work afterwards
+- **Guides you through tasks:** "change my GitHub username" becomes a step-by-step lesson
+  where you do the clicking. Turn on **Autopilot** in settings to have LUMA do it instead,
+  asking before anything consequential; "what did you change?" and "undo that" work afterwards
 - **Snaps** boxes to the exact edges of native controls (macOS Accessibility, Windows UI
   Automation), text highlights to real lines (on-device OCR), and re-checks tiny targets on a close-up
 - **Knows what you selected** and which field has focus, and blacks out password fields

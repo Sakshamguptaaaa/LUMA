@@ -26,7 +26,7 @@ interface Prefs {
   follow_up: boolean;
   warm_stt: boolean;
   remember_lessons: boolean;
-  can_act: boolean;
+  autopilot: boolean;
   max_task_steps: number;
 }
 interface SettingsView {
@@ -98,7 +98,7 @@ function render() {
   const missing = PROVIDERS.filter((x) => x.required && !view.keys[x.id] && !(x.id === "assemblyai" && view.platform === "macos"));
   $("hint").innerHTML = missing.length
     ? `To start, add your ${missing.map((m) => m.name).join(" and ")} key in <b>Settings</b>.`
-    : `Hold ${prettyHotkey(p.hotkey, view.platform)} and ask, then release. Say “show me” and LUMA draws on your screen.${p.gesture ? ` Or hold the trackpad still on something for ${(p.long_press_ms / 1000).toFixed(1)} s and ask about it.` : ""}${p.can_act ? " Ask it to <i>do</i> something (“change my GitHub username”) and it will, asking before anything important." : ""} Say “teach me how to…” and it guides you one step at a time while you do it. Press again to stop.`;
+    : `Hold ${prettyHotkey(p.hotkey, view.platform)} and ask, then release. Say “show me” and LUMA draws on your screen.${p.gesture ? ` Or hold the trackpad still on something for ${(p.long_press_ms / 1000).toFixed(1)} s and ask about it.` : ""}${p.autopilot ? " Ask it to <i>do</i> something (“change my GitHub username”) and it will, asking before anything important. Say “teach me how to…” and it guides you one step at a time while you do it." : " Ask it to do something (“change my GitHub username”) and it guides you one step at a time while you do it."} Press again to stop.`;
 
   const keys = $("keys");
   keys.innerHTML = "";
@@ -144,7 +144,7 @@ function render() {
   $<HTMLInputElement>("follow_up").checked = p.follow_up;
   $<HTMLInputElement>("warm_stt").checked = p.warm_stt;
   $<HTMLInputElement>("remember_lessons").checked = p.remember_lessons;
-  $<HTMLInputElement>("can_act").checked = p.can_act;
+  $<HTMLInputElement>("autopilot").checked = p.autopilot;
   $<HTMLInputElement>("paused").checked = p.paused;
   $<HTMLTextAreaElement>("excluded_apps").value = p.excluded_apps.join("\n");
 
@@ -175,7 +175,7 @@ function collect(): Prefs {
     follow_up: $<HTMLInputElement>("follow_up").checked,
     warm_stt: $<HTMLInputElement>("warm_stt").checked,
     remember_lessons: $<HTMLInputElement>("remember_lessons").checked,
-    can_act: $<HTMLInputElement>("can_act").checked,
+    autopilot: $<HTMLInputElement>("autopilot").checked,
     excluded_apps: $<HTMLTextAreaElement>("excluded_apps")
       .value.split("\n")
       .map((s) => s.trim())
