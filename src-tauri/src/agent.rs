@@ -158,9 +158,9 @@ async fn run_inner(
             last_changed: task.last_changed,
             platform: platform(),
         });
-        let gemini = c.gemini_for(&prefs, "MEDIA_RESOLUTION_HIGH");
-        let body = gemini.build_body(AGENT_PROMPT, &[], &ctx, &[ImagePart { jpeg: &snap.images[0].jpeg }], "Decide the next action.");
-        let reply = gemini.complete(&body).await?;
+        let model = c.llm_for(&prefs, "MEDIA_RESOLUTION_HIGH");
+        let body = model.build_body(AGENT_PROMPT, &[], &ctx, &[ImagePart { jpeg: &snap.images[0].jpeg }], "Decide the next action.");
+        let reply = model.complete(&body).await?;
         if !c.current(epoch) {
             return Ok(());
         }

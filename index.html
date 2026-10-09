@@ -55,7 +55,16 @@
         <label class="check"><input type="checkbox" id="warm_stt" /> Keep speech recognition ready for a few seconds after each answer (faster follow-ups)</label>
 
         <h2>Brain</h2>
-        <label class="mode">Answer mode
+        <label class="mode">Model provider
+          <select id="llm_provider">
+            <option value="gemini">Gemini (Google, every feature)</option>
+            <option value="groq">Groq (cloud, very fast)</option>
+            <option value="ollama">Ollama (runs on this computer)</option>
+          </select>
+        </label>
+        <p class="muted" data-llm="groq" hidden>Use a Groq model that can read images. Fast mode (Gemini Live) is off with Groq.</p>
+        <p class="muted" data-llm="ollama" hidden>Use a vision model you have pulled (for example <code>ollama pull qwen2.5vl</code>). Fast mode (Gemini Live) is off with Ollama.</p>
+        <label class="mode" data-llm="gemini">Answer mode
           <select id="mode">
             <option value="accurate">Accurate: Gemini 3.8 Flash (best pointing, ~3.4 s)</option>
             <option value="fast">Fast: Gemini 3.5 Flash (~2.2 s, less precise)</option>
@@ -63,8 +72,8 @@
           </select>
         </label>
         <div class="grid">
-          <label>Gemini model <input id="gemini_model" spellcheck="false" /></label>
-          <label>Thinking
+          <label data-llm="gemini">Gemini model <input id="gemini_model" spellcheck="false" /></label>
+          <label data-llm="gemini">Thinking
             <select id="thinking_level">
               <option value="minimal">Minimal (fastest)</option>
               <option value="low">Low (recommended)</option>
@@ -72,6 +81,9 @@
               <option value="high">High (slowest, deepest)</option>
             </select>
           </label>
+          <label data-llm="groq" hidden>Groq model <input id="groq_model" spellcheck="false" /></label>
+          <label data-llm="ollama" hidden>Ollama model <input id="ollama_model" spellcheck="false" /></label>
+          <label data-llm="ollama" hidden>Ollama URL <input id="ollama_url" spellcheck="false" placeholder="http://localhost:11434" /></label>
           <label>Speech-to-text model <input id="stt_model" spellcheck="false" /></label>
           <label>Shortcut (hold to talk) <input id="hotkey" spellcheck="false" /></label>
           <label>LUMA proxy URL (optional) <input id="proxy_url" spellcheck="false" placeholder="https://luma-proxy.example.com" /></label>

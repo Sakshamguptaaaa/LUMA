@@ -602,7 +602,8 @@ pub fn run() {
             if !screen::has_screen_permission() {
                 log::warn!("Screen Recording permission missing; LUMA will ask on first use");
             }
-            if Provider::ALL.iter().take(2).any(|p| get_key(*p).is_none()) {
+            let llm_key = handle.state::<AppState>().prefs.lock().unwrap().llm_key();
+            if llm_key.into_iter().chain([Provider::Assemblyai]).any(|p| get_key(p).is_none()) {
                 show_panel(&handle);
             }
             let _ = handle.emit("luma://status", companion::StatusEvent { phase: Phase::Idle, message: None, display: None });

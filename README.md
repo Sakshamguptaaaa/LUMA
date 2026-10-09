@@ -35,8 +35,12 @@ and [docs/RESEARCH.md](docs/RESEARCH.md).
 2. Add your keys, either in LUMA → **Settings** (saved to the OS keychain) or in a `.env` file
    (copy `.env.example`; for the installed app put it in `~/Library/Application Support/com.luma.companion/`
    on macOS or `%APPDATA%\com.luma.companion\` on Windows). `.env` takes priority.
-   - **Gemini** (required): https://aistudio.google.com/apikey. Use a billing-enabled
+   - **Gemini** (required unless you switch models): https://aistudio.google.com/apikey. Use a billing-enabled
      project so your screen content is not used for training.
+   - Or switch the answering model in **Settings → Brain → Model provider**:
+     **Groq** (needs a key from https://console.groq.com/keys and a model that reads images) or
+     **Ollama** (local, no key; pull a vision model such as `ollama pull qwen2.5vl` and keep `ollama serve`
+     running). Fast mode (Gemini Live) is Gemini-only; with Groq or Ollama every turn uses the standard pipeline.
    - **AssemblyAI** (speech-to-text; required on Windows. On a Mac, LUMA falls back to
      on-device recognition without it)
    - **Sarvam** (optional, voice). Without it, answers appear as captions.

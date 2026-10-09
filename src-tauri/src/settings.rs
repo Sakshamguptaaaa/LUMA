@@ -12,6 +12,7 @@ const SERVICE: &str = "com.luma.companion";
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
     Gemini,
+    Groq,
     Assemblyai,
     Sarvam,
     /// Per-device token for a LUMA key proxy (optional).
@@ -19,11 +20,12 @@ pub enum Provider {
 }
 
 impl Provider {
-    pub const ALL: [Provider; 4] = [Provider::Gemini, Provider::Assemblyai, Provider::Sarvam, Provider::Proxy];
+    pub const ALL: [Provider; 5] = [Provider::Gemini, Provider::Groq, Provider::Assemblyai, Provider::Sarvam, Provider::Proxy];
 
     fn account(self) -> &'static str {
         match self {
             Provider::Gemini => "gemini-api-key",
+            Provider::Groq => "groq-api-key",
             Provider::Assemblyai => "assemblyai-api-key",
             Provider::Sarvam => "sarvam-api-key",
             Provider::Proxy => "proxy-token",
@@ -34,6 +36,7 @@ impl Provider {
     fn env_vars(self) -> [&'static str; 2] {
         match self {
             Provider::Gemini => ["LUMA_GEMINI_API_KEY", "GEMINI_API_KEY"],
+            Provider::Groq => ["LUMA_GROQ_API_KEY", "GROQ_API_KEY"],
             Provider::Assemblyai => ["LUMA_ASSEMBLYAI_API_KEY", "ASSEMBLYAI_API_KEY"],
             Provider::Sarvam => ["LUMA_SARVAM_API_KEY", "SARVAM_API_KEY"],
             Provider::Proxy => ["LUMA_PROXY_TOKEN", "LUMA_PROXY_TOKEN"],
@@ -43,10 +46,17 @@ impl Provider {
     pub fn name(self) -> &'static str {
         match self {
             Provider::Gemini => "Gemini",
+            Provider::Groq => "Groq",
             Provider::Assemblyai => "AssemblyAI",
             Provider::Sarvam => "Sarvam",
             Provider::Proxy => "LUMA proxy",
         }
+    }
+
+    /// Whether a configured LUMA key proxy holds this provider's key. The
+    /// proxy only serves Gemini, AssemblyAI and Sarvam.
+    fn via_proxy(self) -> bool {
+        matches!(self, Provider::Gemini | Provider::Assemblyai | Provider::Sarvam) && luma_net::route::proxy().is_some()
     }
 }
 
@@ -82,7 +92,7 @@ fn env_key(p: Provider) -> Option<String> {
 }
 
 pub fn key_source(p: Provider) -> Option<KeySource> {
-    if p != Provider::Proxy && luma_net::route::proxy().is_some() {
+    if p.via_proxy() {
         return Some(KeySource::Proxy);
     }
     if env_key(p).is_some() {
@@ -98,7 +108,7 @@ pub fn key_source(p: Provider) -> Option<KeySource> {
 /// configured, provider keys live on the proxy: a placeholder is returned
 /// and the network clients authenticate with the device token instead.
 pub fn get_key(p: Provider) -> Option<String> {
-    if p != Provider::Proxy && luma_net::route::proxy().is_some() {
+    if p.via_proxy() {
         return Some("via-luma-proxy".into());
     }
     env_key(p).or_else(|| keychain_key(p))
@@ -135,6 +145,10 @@ pub fn set_key(p: Provider, key: &str) -> anyhow::Result<()> {
 pub struct Prefs {
     /// Hold to talk. Uses the global-shortcut plugin's accelerator syntax.
     pub hotkey: String,
+    /// Which model answers: "gemini", "groq" or "ollama". Gemini-only
+    /// features (fast mode with Gemini Live, the fast-model fallback) are
+    /// off with the others.
+    pub llm_provider: String,
     pub gemini_model: String,
     /// minimal | low | medium | high
     pub thinking_level: String,
@@ -184,12 +198,19 @@ pub struct Prefs {
     pub max_task_steps: usize,
     /// Optional LUMA key proxy (keys held by your team, not on this computer).
     pub proxy_url: String,
+    /// Groq model (must accept images), used for every turn.
+    pub groq_model: String,
+    /// Ollama model (must accept images), used for every turn.
+    pub ollama_model: String,
+    /// Ollama server, e.g. "http://localhost:11434".
+    pub ollama_url: String,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
         Self {
             hotkey: if cfg!(target_os = "macos") { "Command+Shift+Space" } else { "Control+Alt+Space" }.into(),
+            llm_provider: "gemini".into(),
             gemini_model: "gemini-3.8-flash".into(),
             thinking_level: "low".into(),
             stt_model: "universal-3-5-pro".into(),
@@ -225,6 +246,9 @@ impl Default for Prefs {
             can_act: true,
             max_task_steps: 25,
             proxy_url: String::new(),
+            groq_model: "meta-llama/llama-4-scout-17b-16e-instruct".into(),
+            ollama_model: "qwen2.5vl".into(),
+            ollama_url: luma_net::openai::OLLAMA_URL.into(),
         }
     }
 }
@@ -243,6 +267,19 @@ impl Prefs {
         }
         std::fs::write(path, serde_json::to_string_pretty(self)?)?;
         Ok(())
+    }
+
+    pub fn uses_gemini(&self) -> bool {
+        !matches!(self.llm_provider.as_str(), "groq" | "ollama")
+    }
+
+    /// The key the answering model needs, if any (Ollama needs none).
+    pub fn llm_key(&self) -> Option<Provider> {
+        match self.llm_provider.as_str() {
+            "groq" => Some(Provider::Groq),
+            "ollama" => None,
+            _ => Some(Provider::Gemini),
+        }
     }
 
     pub fn is_excluded(&self, app: &str) -> bool {

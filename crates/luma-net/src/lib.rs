@@ -5,6 +5,8 @@ pub mod gemini;
 pub mod sarvam;
 pub mod sarvam_ws;
 pub mod live;
+pub mod llm;
+pub mod openai;
 pub mod route;
 pub mod vision;
 

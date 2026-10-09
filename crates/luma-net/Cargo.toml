@@ -2,7 +2,7 @@
 name = "luma-net"
 version = "0.1.0"
 edition = "2021"
-description = "Network clients for LUMA's model providers (Gemini, AssemblyAI, Sarvam)."
+description = "Network clients for LUMA's model providers (Gemini, Groq, Ollama, AssemblyAI, Sarvam)."
 
 [dependencies]
 luma-core = { path = "../luma-core" }
