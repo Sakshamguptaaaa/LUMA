@@ -77,7 +77,13 @@ This turn is voice only: answer in 1-3 short spoken sentences and do not use any
 
 const CANNOT_ACT: &str = r#"
 ## Acting
-You cannot click or type on the user's computer right now. If the user asks you to do something, explain how (pointing at what to click when drawing is available)."#;
+You never click or type on the user's computer; the user does it and you guide them. If the user asks you to do something, tell them the first step plainly (pointing at what to click when drawing is available), and the next ones in order, so they can follow along."#;
+
+const GUIDE: &str = r#"
+## Doing things: the user acts, you guide
+You never click or type on the user's computer. The user does every step themselves and you guide them.
+When the user asks you to do something, or asks how to do something whose result they clearly want (for example "change my GitHub username", "turn off notifications", "open my calendar"), do not explain every step at once and do not offer to do it for them. Say one short sentence such as "Sure, I'll walk you through it." and emit <lesson goal="..."/> with a precise, self-contained goal that includes every detail the user gave (names, values, which account or app). LUMA will then point at one step at a time and watch their screen as they do it.
+Do NOT start a lesson when the user asks what something is, wants an explanation, says "where is", or "how does it work"; explain and point instead."#;
 
 const CAN_ACT: &str = r#"
 ## Doing things for the user
@@ -109,8 +115,10 @@ pub enum Draw {
     Always,
 }
 
-/// Assemble the system prompt for a turn.
-pub fn system_prompt(draw: Draw, can_act: bool) -> String {
+/// Assemble the system prompt for a turn. With `autopilot` off (the
+/// default), requests to get something done become guided lessons; with it
+/// on, LUMA may click and type for the user.
+pub fn system_prompt(draw: Draw, autopilot: bool) -> String {
     let mut s = String::from(BASE);
     match draw {
         Draw::Never => s.push_str(VOICE_ONLY),
@@ -125,7 +133,12 @@ pub fn system_prompt(draw: Draw, can_act: bool) -> String {
             s.push_str(TEACHING);
         }
     }
-    s.push_str(if can_act { CAN_ACT } else { CANNOT_ACT });
+    s.push_str(match (autopilot, draw) {
+        (true, _) => CAN_ACT,
+        // lessons point at each step, so they need drawing
+        (false, Draw::Never) => CANNOT_ACT,
+        (false, _) => GUIDE,
+    });
     s
 }
 
@@ -319,6 +332,18 @@ mod tests {
         assert!(system_prompt(Draw::Never, true).contains("<task "));
         assert!(system_prompt(Draw::WhenUseful, false).contains("Draw only when it clearly helps"));
         assert!(!p.contains("<lesson "), "teaching needs drawing");
+    }
+
+    #[test]
+    fn guide_mode_hands_requests_to_lessons_not_tasks() {
+        for draw in [Draw::WhenUseful, Draw::Always] {
+            let p = system_prompt(draw, false);
+            assert!(!p.contains("<task "), "{draw:?}");
+            assert!(p.contains("<lesson goal="), "{draw:?}");
+            assert!(p.contains("change my GitHub username"), "{draw:?}");
+            assert!(system_prompt(draw, true).contains("<task "), "{draw:?}");
+        }
+        assert!(system_prompt(Draw::Never, false).contains("you guide them"));
     }
 }
 

@@ -178,8 +178,11 @@ pub struct Prefs {
     /// Save lesson progress (text only) so "continue from where we left
     /// off" works after quitting LUMA.
     pub remember_lessons: bool,
-    /// Let LUMA click and type to carry out tasks you ask for.
-    pub can_act: bool,
+    /// Autopilot: let LUMA click and type to carry out tasks you ask for.
+    /// Off by default: LUMA guides you through each step and you do it.
+    /// (Replaces the old `can_act` key, which defaulted on; saved values of
+    /// that key are ignored so everyone starts in guide mode.)
+    pub autopilot: bool,
     /// Upper bound on agent steps per task.
     pub max_task_steps: usize,
     /// Optional LUMA key proxy (keys held by your team, not on this computer).
@@ -222,7 +225,7 @@ impl Default for Prefs {
             live_model: "gemini-3.8-live".into(),
             warm_stt: true,
             follow_up: false,
-            can_act: true,
+            autopilot: false,
             max_task_steps: 25,
             proxy_url: String::new(),
         }
@@ -248,5 +251,19 @@ impl Prefs {
     pub fn is_excluded(&self, app: &str) -> bool {
         let a = app.to_lowercase();
         self.excluded_apps.iter().any(|e| !e.trim().is_empty() && a.contains(&e.trim().to_lowercase()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Prefs;
+
+    #[test]
+    fn guide_mode_is_the_default_even_for_old_prefs() {
+        assert!(!Prefs::default().autopilot);
+        let old: Prefs = serde_json::from_str(r#"{"can_act": true, "paused": true}"#).unwrap();
+        assert!(old.paused && !old.autopilot);
+        let on: Prefs = serde_json::from_str(r#"{"autopilot": true}"#).unwrap();
+        assert!(on.autopilot);
     }
 }

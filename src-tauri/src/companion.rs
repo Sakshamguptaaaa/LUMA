@@ -5,8 +5,11 @@
 //!   drawing. Cheapest per turn.
 //! * **Annotate** — held ≥ `long_press_ms` (or "always"): full-resolution
 //!   screenshot plus pointer close-up, boxes/arrows/labels on screen.
-//! * **Task** — in either mode the model may answer with `<task goal=…/>`,
-//!   which hands off to the agent loop (`agent.rs`).
+//! * **Lesson** — asked to do or learn something, the model answers with
+//!   `<lesson goal=…/>` and LUMA guides the user one step at a time
+//!   (`lesson.rs`); the user does the clicking.
+//! * **Task** — only with autopilot on, the model may answer with
+//!   `<task goal=…/>`, which hands off to the agent loop (`agent.rs`).
 //!
 //! Latency: capture and the STT connection start the moment the key goes
 //! down; Gemini streams; speech is synthesized per utterance while the model
@@ -1019,7 +1022,7 @@ impl Companion {
             let history: Vec<HistoryTurn> =
                 session.turns().map(|t| HistoryTurn { user: &t.user, assistant: &t.assistant }).collect();
             let images: Vec<ImagePart> = snap.images.iter().map(|i| ImagePart { jpeg: &i.jpeg }).collect();
-            let system = system_prompt(style.draw, prefs.can_act);
+            let system = system_prompt(style.draw, prefs.autopilot);
             let body = self.gemini_for_style(&prefs, &style).build_body(&system, &history, &ctx, &images, &question);
             // the fast model, in case the accurate one deliberates for long
             let fallback = (style.model != prefs.fast_model).then(|| {
@@ -1197,6 +1200,12 @@ impl Companion {
             if !this.current(epoch) {
                 return;
             }
+            // Guide mode (autopilot off): a task the model started anyway
+            // becomes a lesson, so the user does the clicking.
+            let (lesson_goal, task_goal) = match (lesson_goal, task_goal) {
+                (None, Some(goal)) if !prefs.autopilot => (Some(goal), None),
+                goals => goals,
+            };
             if let Some(goal) = lesson_goal {
                 let mut l = luma_core::lesson::Lesson::new(goal);
                 l.app = window_app;
@@ -1220,7 +1229,7 @@ impl Companion {
                 None => None,
             };
             match task_goal {
-                Some(goal) if prefs.can_act => {
+                Some(goal) if prefs.autopilot => {
                     agent::run(this.clone(), app2.clone(), epoch, TaskState::new(goal, Some(display)), None).await;
                 }
                 _ if this.lesson().is_some() => {
